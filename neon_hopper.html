@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Hopper Game</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+        body { background: #111; font-family: Arial, sans-serif; overflow: hidden; touch-action: none; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        #game-container { position: relative; width: 100vw; height: 100vh; max-width: 800px; max-height: 400px; background: #1a1a2e; border: 3px solid #0f3460; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.7); }
+        canvas { display: block; width: 100%; height: 100%; }
+        .score-ui { position: absolute; top: 15px; right: 20px; color: #00f2fe; font-size: 20px; font-weight: bold; text-shadow: 0 0 8px rgba(0,242,254,0.6); pointer-events: none; }
+        .screen { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; text-align: center; padding: 20px; z-index: 10; }
+        .screen h1 { color: #00f2fe; font-size: 36px; margin-bottom: 10px; text-shadow: 0 0 12px rgba(0,242,254,0.5); }
+        .screen p { font-size: 16px; margin-bottom: 25px; color: #a5b4fc; }
+        .screen button { padding: 12px 40px; font-size: 18px; background: linear-gradient(45deg, #00f2fe, #4facfe); border: none; color: white; font-weight: bold; border-radius: 30px; cursor: pointer; box-shadow: 0 4px 15px rgba(0,242,254,0.4); }
+        .screen button:active { transform: scale(0.95); }
+        .tap-zone { position: absolute; inset: 0; z-index: 2; cursor: pointer; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="hopperCanvas"></canvas>
+    <div class="score-ui">النقاط: <span id="score-text">0</span></div>
+    
+    <!-- منطقة الضغط المباشر على الشاشة للقفز -->
+    <div id="tap-trigger" class="tap-zone"></div>
+
+    <div id="start-screen" class="screen">
+        <h1>Neon Hopper</h1>
+        <p>اضغط في أي مكان على الشاشة لتقفز فوق العقبات النيونية المتحركة السريعة!</p>
+        <button id="start-btn">ابدأ اللعب</button>
+    </div>
+
+    <div id="gameover-screen" class="screen hidden">
+        <h1>انتهت اللعبة! 💥</h1>
+        <p>مجموع نقاطك الرائع هو: <span id="final-score">0</span></p>
+        <button id="restart-btn">إعادة المحاولة</button>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('hopperCanvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = 800;
+canvas.height = 400;
+
+let isRunning = false;
+let score = 0;
+let gameSpeed = 5;
+
+const gravity = 0.6;
+const player = {
+    x: 100,
+    y: 300,
+    size: 30,
+    vy: 0,
+    jumpForce: -13,
+    isGrounded: false,
+    color: '#00f2fe',
+    rotation: 0
+};
+
+let obstacles = [];
+let nextObstacleTimer = 0;
+
+function spawnObstacle() {
+    let height = Math.random() * 40 + 30; // ارتفاع بين 30 و 70
+    let width = 20;
+    obstacles.push({
+        x: canvas.width,
+        y: 350 - height,
+        w: width,
+        h: height,
+        color: '#ff007f'
+    });
+}
+
+function handleJump() {
+    if (player.isGrounded && isRunning) {
+        player.vy = player.jumpForce;
+        player.isGrounded = false;
+    }
+}
+
+// قفز عند لمس الشاشة أو الضغط بالكيبورد أو الماوس
+document.getElementById('tap-trigger').addEventListener('touchstart', (e) => { e.preventDefault(); handleJump(); });
+document.getElementById('tap-trigger').addEventListener('mousedown', handleJump);
+window.addEventListener('keydown', (e) => { if(e.code === 'Space' || e.code === 'ArrowUp') handleJump(); });
+
+function update() {
+    if (!isRunning) return;
+
+    // زيادة السرعة تدريجياً لزيادة الحماس
+    gameSpeed += 0.001;
+
+    // تطبيق الجاذبية على مكعب اللاعب
+    player.vy += gravity;
+    player.y += player.vy;
+
+    // الاصطدام بالأرض الثابتة (ارتفاع الأرضية عند 350)
+    if (player.y >= 350 - player.size) {
+        player.y = 350 - player.size;
+        player.vy = 0;
+        player.isGrounded = true;
+    }
+
+    // دوران خفيف للمكعب أثناء القفز لشكل جمالي مثل جيومتري داش
+    if (!player.isGrounded) {
+        player.rotation += 0.08;
+    } else {
+        // ضبط الدوران ليقفل على زاوية مستقيمة عند الهبوط
+        player.rotation = Math.round(player.rotation / (Math.PI / 2)) * (Math.PI / 2);
+    }
+
+    // توليد العقبات بتوقيت شبه عشوائي ومتوازن
+    nextObstacleTimer--;
+    if (nextObstacleTimer <= 0) {
+        spawnObstacle();
+        nextObstacleTimer = Math.random() * 40 + (100 - gameSpeed * 4); 
+    }
+
+    // تحديث العقبات واكتشاف التصادم
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.x -= gameSpeed;
+
+        // الخروج من الشاشة وحساب النقطة
+        if (obs.x + obs.w < 0) {
+            obstacles.splice(i, 1);
+            score++;
+            document.getElementById('score-text').innerText = score;
+            continue;
+        }
+
+        // معادلة تصادم الصندوق AABB Box Collision
+        if (
+            player.x < obs.x + obs.w &&
+            player.x + player.size > obs.x &&
+            player.y < obs.y + obs.h &&
+            player.y + player.size > obs.y
+        ) {
+            gameOver();
+        }
+    }
+}
+
+function draw() {
+    // خلفية نيونية داكنة
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // رسم خط الأرض المضيء
+    ctx.strokeStyle = '#0f3460';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 350);
+    ctx.lineTo(canvas.width, 350);
+    ctx.stroke();
+
+    // رسم اللاعب المربع بتأثير نيون ودوران بسيط
+    ctx.save();
+    ctx.translate(player.x + player.size/2, player.y + player.size/2);
+    ctx.rotate(player.rotation);
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = player.color;
+    ctx.fillStyle = player.color;
+    ctx.fillRect(-player.size/2, -player.size/2, player.size, player.size);
+    ctx.restore();
+
+    // رسم العقبات المثلثة أو المربعة الحادة باللون الفوشيا المضيء
+    obstacles.forEach(obs => {
+        ctx.save();
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = obs.color;
+        ctx.fillStyle = obs.color;
+        ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+        ctx.restore();
+    });
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+function startGame() {
+    score = 0;
+    gameSpeed = 5.5;
+    obstacles = [];
+    nextObstacleTimer = 30;
+    player.y = 350 - player.size;
+    player.vy = 0;
+    player.rotation = 0;
+    player.isGrounded = true;
+    document.getElementById('score-text').innerText = score;
+    document.getElementById('start-screen').classList.add('hidden');
+    document.getElementById('gameover-screen').classList.add('hidden');
+    isRunning = true;
+}
+
+function gameOver() {
+    isRunning = false;
+    document.getElementById('final-score').innerText = score;
+    document.getElementById('gameover-screen').classList.remove('hidden');
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.getElementById('restart-btn').addEventListener('click', startGame);
+
+gameLoop();
+</script>
+</body>
+</html>
